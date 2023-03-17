@@ -7,7 +7,7 @@ class URMusicPlayerConfig : public UObject
 
 	// Configuration.
 	FString DriverName;
-	FString Output;
+	BYTE Output;
 
 	/**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	* static constructor (builds configuration menu)

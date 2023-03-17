@@ -1,3 +1,11 @@
+RMusicPlayer was originally GPLv2-licensed, but it uses FMOD as its audio
+backend. FMOD is GPL-incompatible, so RMusicPlayer's license is probably
+invalid.
+
+--anth
+
+# Original RMusicPlayer LICENSE
+
 GNU GENERAL PUBLIC LICENSE
                        Version 2, June 1991
 

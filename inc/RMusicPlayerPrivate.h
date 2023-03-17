@@ -13,16 +13,6 @@
 
 	#include "Engine.h"
 
-	/**~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	* If you forget this You will have error like this:
-	* '(...) inconsistent dll linkage.  dllexport assumed.(...)'
-	*/
-	#define RMUSICPLAYER_API DLL_EXPORT
-
-	#ifndef RMUSICPLAYER_API
-	#define RMUSICPLAYER_API DLL_IMPORT
-	#endif
-
 	#define RESULT_CAST(type, var) *reinterpret_cast< type * >(var)
 	#define SCRIPT_STACK FFrame &Stack, void* Result
 

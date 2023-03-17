@@ -40,11 +40,15 @@ void ARMusic_Player::StaticConstructor()
 	for (i=0; i < numdrivers; i++)
 	{
 		char StringA[256];
-		result = local_system->getDriverInfo(i, StringA, 256, 0);
+		FMOD_GUID Guid;
+		INT SampleRate;
+		FMOD_SPEAKERMODE SpeakerMode;
+		INT Channels;
+		result = local_system->getDriverInfo(i, StringA, 256, &Guid, &SampleRate, &SpeakerMode, &Channels);
 		new(SoundDrivers->Names) FName(ANSI_TO_TCHAR(StringA));
 	}       
 
-	new(GetClass(), TEXT("SoundDriver"), RF_Public)UByteProperty (CPP_PROPERTY( DriverName ), TEXT("MusicPlayer"), CPF_Config, SoundDrivers );
+	new(GetClass(), TEXT("SoundDriver"), RF_Public)UStrProperty (CPP_PROPERTY( DriverName ), TEXT("MusicPlayer"), CPF_Config );
 	
 	unguard;
 }
@@ -68,7 +72,11 @@ int ARMusic_Player::GetDriverNum()
 	for (i=0; i < numdrivers; i++)
 	{
 		char StringA[256];
-		result = local_system->getDriverInfo(i, StringA, 256, 0);
+		FMOD_GUID Guid;
+		INT SampleRate;
+		FMOD_SPEAKERMODE SpeakerMode;
+		INT Channels;
+		result = local_system->getDriverInfo(i, StringA, 256, &Guid, &SampleRate, &SpeakerMode, &Channels);
 		CrrentDriverF = ANSI_TO_TCHAR(StringA);
 		CrrentDriverF = RemoveSpaces( *CrrentDriverF );		
 		
@@ -117,13 +125,11 @@ void ARMusic_Player::execRMusic_Startup(SCRIPT_STACK)
 			debugf(NAME_Init, TEXT("RMusic_Player :: FMOD error :: RMusic_Startup :: wrong fmodex.dll version. RMusic_Player requires version %i"), FMOD_VERSION);
 		}
 		RMusicPlayer_system->setDriver(Cast<URMusicPlayerConfig>(URMusicPlayerConfig::StaticClass()->GetDefaultObject() )->GetDriverNum());
-		FString SelOut=Cast<URMusicPlayerConfig>(URMusicPlayerConfig::StaticClass()->GetDefaultObject() )->Output;
+		BYTE SelOut=Cast<URMusicPlayerConfig>(URMusicPlayerConfig::StaticClass()->GetDefaultObject() )->Output;
 
-		if( SelOut == FString(TEXT("DirectSound")) )
-			RMusicPlayer_system->setOutput(FMOD_OUTPUTTYPE_DSOUND);
-		else if( SelOut == FString(TEXT("WindowsMultimediaWaveOut")) )
-			RMusicPlayer_system->setOutput(FMOD_OUTPUTTYPE_WINMM);
-		else if( SelOut == FString(TEXT("ASIO")) )
+		if (SelOut == 0 || SelOut == 1)
+			RMusicPlayer_system->setOutput(FMOD_OUTPUTTYPE_WASAPI);
+		else if (SelOut == 2)
 			RMusicPlayer_system->setOutput(FMOD_OUTPUTTYPE_ASIO);
 
 		//loads additional codecs
@@ -227,7 +233,7 @@ void ARMusic_Player::execRMusic_SetDSPParam(SCRIPT_STACK)
 	P_GET_INT( index );
 	P_GET_FLOAT( value );	
 	P_FINISH; 
-	DSP_Plugins_S FoundPlugin;	
+	DSP_Plugins_S FoundPlugin{};	
 	FMOD_RESULT result;
 
 	if(RMusicPlayer_system != NULL)
@@ -241,7 +247,7 @@ void ARMusic_Player::execRMusic_SetDSPParam(SCRIPT_STACK)
 				break;
 			}
 		}		
-		if (FoundPlugin.DSPHandle != NULL)
+		if (i < 16 && FoundPlugin.DSPHandle != NULL)
 		{
 			debugf(NAME_Init, TEXT("RMusic_Player :: RMusic_SetDSPParam :: DSP FOund"));
 			int RDSPNumParams;
@@ -252,20 +258,25 @@ void ARMusic_Player::execRMusic_SetDSPParam(SCRIPT_STACK)
 			}
 			if( FoundPlugin.DSPPlugin != FString(TEXT("")) && index < RDSPNumParams )
 			{
-				float min;
-				float max;
+				FMOD_DSP_PARAMETER_DESC* Descriptors;
 				debugf(NAME_Init, TEXT("RMusic_Player :: RMusic_SetDSPParam :: Creating DSP"));
 
-				result = FoundPlugin.DSPHandle->getParameterInfo(index, 0, 0, 0, 0, &min, &max);
+				result = FoundPlugin.DSPHandle->getParameterInfo(index, &Descriptors);
 
 				if (result != FMOD_OK && bIncludeDebugInfo)
 				{
 					debugf(NAME_Init, TEXT("RMusic_Player :: RMusic_SetDSPParam :: FMOD error  ::  (%d) %s"), result, ANSI_TO_TCHAR(FMOD_ErrorString(result)) );
+					return;
+				}
+				if (Descriptors[0].type != FMOD_DSP_PARAMETER_TYPE_FLOAT && bIncludeDebugInfo)
+				{
+					debugf(NAME_Init, TEXT("RMusic_Player :: RMusic_SetDSPParam :: Invalid DSP Parameter type: %d"), Descriptors[0].type);
+					return;
 				}
 
-				if(value > max) value=max;
-				if(value < min) value=min;
-				result = FoundPlugin.DSPHandle->setParameter(index, value);
+				value = Clamp<FLOAT>(value, Descriptors[0].floatdesc.min, Descriptors[0].floatdesc.max);
+
+				result = FoundPlugin.DSPHandle->setParameterFloat(index, value);
 
 				if (result != FMOD_OK && bIncludeDebugInfo)
 				{
@@ -375,9 +386,9 @@ void ARMusic_Player::execRMusic_Play(SCRIPT_STACK)
 		}
 		//creating stream
 		if( Loop )
-			result = RMusicPlayer_system->createStream(TCHAR_TO_ANSI(*ConnectAddSlashes(RMusic_Directory,File)), FMOD_HARDWARE | FMOD_LOOP_NORMAL | FMOD_2D, 0, &RMusicPlayer_sound);
+			result = RMusicPlayer_system->createStream(TCHAR_TO_ANSI(*ConnectAddSlashes(RMusic_Directory,File)), FMOD_LOOP_NORMAL | FMOD_2D, 0, &RMusicPlayer_sound);
 		else
-			result = RMusicPlayer_system->createStream(TCHAR_TO_ANSI(*ConnectAddSlashes(RMusic_Directory,File)), FMOD_HARDWARE | FMOD_LOOP_OFF | FMOD_2D, 0, &RMusicPlayer_sound);
+			result = RMusicPlayer_system->createStream(TCHAR_TO_ANSI(*ConnectAddSlashes(RMusic_Directory,File)), FMOD_LOOP_OFF | FMOD_2D, 0, &RMusicPlayer_sound);
 		
 		if( result != FMOD_OK && bUseCurrentPaths )
 		{
@@ -405,9 +416,9 @@ void ARMusic_Player::execRMusic_Play(SCRIPT_STACK)
 			if( bFound )
 			{
 				if( Loop )
-					result = RMusicPlayer_system->createStream(TCHAR_TO_ANSI(*Fn), FMOD_HARDWARE | FMOD_LOOP_NORMAL | FMOD_2D, 0, &RMusicPlayer_sound);
+					result = RMusicPlayer_system->createStream(TCHAR_TO_ANSI(*Fn), FMOD_LOOP_NORMAL | FMOD_2D, 0, &RMusicPlayer_sound);
 				else
-					result = RMusicPlayer_system->createStream(TCHAR_TO_ANSI(*Fn), FMOD_HARDWARE | FMOD_LOOP_OFF | FMOD_2D, 0, &RMusicPlayer_sound);
+					result = RMusicPlayer_system->createStream(TCHAR_TO_ANSI(*Fn), FMOD_LOOP_OFF | FMOD_2D, 0, &RMusicPlayer_sound);
 				RESULT_CAST(UBOOL, Result) = true;
 			}
 			else
@@ -427,7 +438,7 @@ void ARMusic_Player::execRMusic_Play(SCRIPT_STACK)
 		{
 			if(bIncludeDebugInfo) debugf(NAME_Init, TEXT("RMusic_Player :: RMusic_Play :: Stream created from file %s"), ConnectAddSlashes(RMusic_Directory,File));
 
-			result = RMusicPlayer_system->playSound(FMOD_CHANNEL_FREE, RMusicPlayer_sound, false, &RMusicPlayer_channel);
+			result = RMusicPlayer_system->playSound(RMusicPlayer_sound, nullptr, false, &RMusicPlayer_channel);
 			if(result != FMOD_OK)
 			{
 				if(bIncludeDebugInfo) debugf(NAME_Init, TEXT("RMusic_Player :: FMOD error  :: RMusic_Play :: (%d) %s"), result, ANSI_TO_TCHAR(FMOD_ErrorString(result)) );
